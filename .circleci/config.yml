@@ -131,7 +131,7 @@ jobs:
               command: nix-shell --fallback --pure --argstr flavor "coreDev" --run hc-test-slow-nextest
          - run:
               name: push to cachix
-              command: $(nix-build . --fallback --no-link -A pkgs.ci.ciCachixPush)/bin/hc-ci-cachix-push.sh
+              command: $(nix-build . --fallback --no-link -A pkgs.ci.ciCachixPush)/bin/hc-ci-cachix-push.sh || true
               when: always
 
    wasm-test:
