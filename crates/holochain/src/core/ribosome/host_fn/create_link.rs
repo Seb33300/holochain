@@ -21,7 +21,7 @@ pub fn create_link<'a>(
             let CreateLinkInput {
                 base_address,
                 target_address,
-                type_location,
+                link_type: type_location,
                 tag,
                 chain_top_ordering,
             } = input;

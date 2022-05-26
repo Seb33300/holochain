@@ -1,11 +1,8 @@
 use darling::FromMeta;
-use darling::ToTokens;
 use proc_macro::TokenStream;
 use proc_macro_error::abort;
 use syn::parse_macro_input;
 use syn::punctuated::Punctuated;
-use syn::visit;
-use syn::visit::Visit;
 use syn::AttributeArgs;
 use syn::Item;
 use syn::ItemEnum;
@@ -31,7 +28,7 @@ pub fn build(args: TokenStream, input: TokenStream) -> TokenStream {
         }
     };
 
-    // TODO: Handle case for nested?
+    // Handle case for nested
     let nested = match MacroArgs::from_list(&attr_args) {
         Ok(a) => a.nested,
         Err(e) => abort!(ident, "not sure {:?}", e),
@@ -99,9 +96,11 @@ fn no_nesting(
             }
         }
 
+        impl EnumLen<#variant_len> for #ident {}
+
         impl #ident {
-            pub fn len() -> u8 {
-                #variant_len
+            pub const fn len() -> u8 {
+                <Self as EnumLen<#variant_len>>::ENUM_LEN
             }
         }
     }
@@ -111,60 +110,121 @@ fn nesting(
     ident: &syn::Ident,
     variants: &Punctuated<Variant, syn::token::Comma>,
 ) -> proc_macro2::TokenStream {
-    variants
+    let inner_from: proc_macro2::TokenStream = variants
         .iter()
+        .enumerate()
         .map(
-            |syn::Variant {
-                 ident: v_ident,
-                 fields,
-                 ..
-             }| {
-                let nested_field_lens: proc_macro2::TokenStream = match fields {
-                    syn::Fields::Named(syn::FieldsNamed { named, .. }) => named.iter()
-                     .map(|syn::Field{ty, ..}| quote::quote! {#ty::len() + }).collect(),
-                    syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) => unnamed.iter()
-                     .map(|syn::Field{ty, ..}| quote::quote! {#ty::len() + }).collect(),
-                    syn::Fields::Unit => quote::quote! {1u8 + },
-                };
-                // dbg!(&nested_field);
-                // let inner_variants: proc_macro2::TokenStream = match nested_field {
-                //     Some(syn::Field {
-                //         ident: inner_ident, ty, ..
-                //     }) => match inner_ident {
-                //         Some(inner_ident) => {
-                //             quote::quote! {#ty::len() => {
-                //                 let i = count + LocalZomeTypeId::from(#inner_ident).0;
-                //                 LocalZomeTypeId(i)
-                //             },}
-                //         }
-                //         None => todo!(),
-                //     },
-                //     None => todo!(),
-                // };
-                // if inner_variants.is_empty() {
-                //     let i = inc_index(ident, &mut index);
-                //     let ignore = ignore_enum_data(&fields);
-                //     quote::quote! {#ident::#v_ident #ignore => LocalZomeTypeId(#i),}
-                // } else {
-                //     inner_variants.into_iter().collect()
-                // }
-                nested_field_lens
+            |(
+                enum_index,
+                syn::Variant {
+                    ident: v_ident,
+                    fields,
+                    ..
+                },
+            )| {
+                let enum_index = u8::try_from(enum_index).unwrap();
+                match fields {
+                    syn::Fields::Named(syn::FieldsNamed { named, .. }) => 
+                    match named.iter().next().and_then(|syn::Field{ident, ..}| ident.as_ref())
+                    {
+                        Some(inner_ident) => {
+                            quote::quote! {
+                                #ident::#v_ident { #inner_ident, ..}  => {
+                                    Self(<#ident as EnumVariantLen<#enum_index>>::ENUM_VARIANT_START + Self::from(#inner_ident).0)
+                                }
+                            }
+                        }
+                        None => todo!(),
+                    }
+                    syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) => {
+                        if unnamed.iter().next().is_some() {
+                            quote::quote! {
+                                #ident::#v_ident (inner_ident)  => {
+                                    Self(<#ident as EnumVariantLen<#enum_index>>::ENUM_VARIANT_START + Self::from(inner_ident).0)
+                                }
+                            }
+                        } else {
+                            todo!()
+                        }
+                    }
+                    syn::Fields::Unit => {
+                        quote::quote! {
+                            #ident::#v_ident  => {
+                                Self(<#ident as EnumVariantLen<#enum_index>>::ENUM_VARIANT_START)
+                            }
+                        }
+                    },
+                }
             },
         )
-        .collect()
-}
+        .collect();
+    let enum_variant_len: proc_macro2::TokenStream = variants
+        .iter()
+        .enumerate()
+        .map(
+            |(
+                enum_index,
+                syn::Variant {
+                    fields,
+                    ..
+                },
+            )| {
+                let enum_index = u8::try_from(enum_index).unwrap();
+                let nested_field = match fields {
+                    syn::Fields::Named(syn::FieldsNamed { named, .. }) => named.iter().next(),
+                    syn::Fields::Unnamed(syn::FieldsUnnamed { unnamed, .. }) => {
+                        unnamed.iter().next()
+                    }
+                    syn::Fields::Unit => None,
+                };
+                let start = if enum_index == 0 {
+                    quote::quote! {0;}
+                } else {
+                    quote::quote! {<Self as EnumVariantLen<{#enum_index - 1}>>::ENUM_VARIANT_LEN;}
+                };
+                let inner_len = match nested_field {
+                    Some(syn::Field {
+                        ty: syn::Type::Path(syn::TypePath { path, .. }),
+                        ..
+                    }) => {
+                        quote::quote! {
+                                const ENUM_VARIANT_INNER_LEN: u8 = #path::ENUM_LEN;
+                        }
+                    }
+                    None => quote::quote! {
+                                const ENUM_VARIANT_INNER_LEN: u8 = 1;
+                    },
+                    _ => todo!(),
+                };
+                quote::quote! {
+                    impl EnumVariantLen<#enum_index> for #ident {
+                        const ENUM_VARIANT_START: u8 = #start
+                        #inner_len
+                    }
+                }
+            },
+        )
+        .collect();
 
-fn inc_index(ident: &syn::Ident, index: &mut u8, amount: u8) -> u8 {
-    let i = *index;
-    match index.checked_add(amount) {
-        Some(next) => {
-            *index = next;
+    let last_variant_index = (variants.len() - 1) as u8;
+
+    quote::quote! {
+        impl EnumLen<{<#ident as EnumVariantLen<#last_variant_index>>::ENUM_VARIANT_LEN}> for #ident {}
+
+        #enum_variant_len
+
+        impl From<&#ident> for LocalZomeTypeId {
+            fn from(n: &#ident) -> Self {
+                match n {
+                    #inner_from
+                }
+            }
         }
-        None => abort!(
-            ident,
-            "Enum cannot be longer then 256 variants.";
-            help = "Make your enum with less then 256 variants"
-        ),
-    };
-    i
+        
+        impl #ident {
+            pub const fn len() -> u8 {
+                <Self as EnumLen<{<#ident as EnumVariantLen<#last_variant_index>>::ENUM_VARIANT_LEN}>>::ENUM_LEN
+            }
+        }
+    }
 }

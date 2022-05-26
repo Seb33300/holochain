@@ -63,7 +63,7 @@ macro_rules! map_extern {
                 use super::*;
 
                 #[no_mangle]
-                pub extern "C" fn $name(guest_ptr: $crate::prelude::GuestPtr, len: $crate::prelude::Len) -> $crate::prelude::GuestPtrLen {
+                pub extern "C" fn [< _ $name >](guest_ptr: $crate::prelude::GuestPtr, len: $crate::prelude::Len) -> $crate::prelude::GuestPtrLen {
                     $crate::map_extern_preamble!(guest_ptr, len, inner, $input, $output);
                     match super::$f(inner) {
                         Ok(v) => $crate::map_extern::encode_to_guestptrlen(v),

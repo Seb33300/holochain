@@ -283,7 +283,7 @@ impl HostFnCaller {
         let input = CreateLinkInput::new(
             base,
             target,
-            LinkTypeLocation::new(zome_name, HdkLinkType::Any),
+            LinkType::new(zome_name, HdkLinkType::Any),
             link_tag,
             ChainTopOrdering::default(),
         );

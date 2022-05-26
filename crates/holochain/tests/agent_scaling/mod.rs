@@ -22,7 +22,7 @@ fn links_zome() -> InlineZomeSet {
                 let hash = api.create_link(CreateLinkInput::new(
                     base_target.0,
                     base_target.1,
-                    LinkTypeLocation::new("integrity_links", LinkType::new(0)),
+                    LinkType::new("integrity_links", LinkType::new(0)),
                     ().into(),
                     ChainTopOrdering::default(),
                 ))?;

@@ -2,6 +2,7 @@
 
 use proc_macro::TokenStream;
 use proc_macro_error::proc_macro_error;
+use quote::format_ident;
 use quote::TokenStreamExt;
 use syn::parse::Parse;
 use syn::parse::ParseStream;
@@ -16,6 +17,7 @@ mod entry_helper;
 mod entry_zomes;
 mod link_types;
 mod link_zomes;
+mod to_global_types;
 mod to_link_type_query;
 mod to_local_types;
 mod unit_enum;
@@ -247,11 +249,12 @@ pub fn derive_entry_def_registration(input: TokenStream) -> TokenStream {
     entry_def_registration::derive(input)
 }
 
-#[proc_macro_derive(UnitEnum, attributes(unit_enum))]
+#[proc_macro_derive(UnitEnum, attributes(unit_enum, unit_attrs))]
 pub fn derive_to_unit_enum(input: TokenStream) -> TokenStream {
     unit_enum::derive(input)
 }
 
+#[proc_macro_error]
 #[proc_macro_attribute]
 pub fn hdk_entry_defs(attrs: TokenStream, code: TokenStream) -> TokenStream {
     entry_defs::build(attrs, code)
@@ -268,6 +271,19 @@ pub fn hdk_to_local_types(attrs: TokenStream, code: TokenStream) -> TokenStream 
     to_local_types::build(attrs, code)
 }
 
+#[proc_macro_error]
+#[proc_macro_attribute]
+pub fn hdk_to_global_entry_types(attrs: TokenStream, code: TokenStream) -> TokenStream {
+    to_global_types::build_entry(attrs, code)
+}
+
+#[proc_macro_error]
+#[proc_macro_attribute]
+pub fn hdk_to_global_link_types(attrs: TokenStream, code: TokenStream) -> TokenStream {
+    to_global_types::build_link(attrs, code)
+}
+
+#[proc_macro_error]
 #[proc_macro_attribute]
 pub fn entry_defs_name_registration(attrs: TokenStream, code: TokenStream) -> TokenStream {
     entry_defs_name_registration::build(attrs, code)

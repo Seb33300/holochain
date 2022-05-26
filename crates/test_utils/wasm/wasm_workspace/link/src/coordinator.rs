@@ -1,18 +1,92 @@
 use crate::integrity::LinkTypes;
+use crate::integrity::LinkTypesHelper;
 use hdk::prelude::*;
+// #[derive(ToZomeName)]
+// enum Zomes {
+//     IntegrityLink,
+// }
 
-#[derive(ToZomeName)]
-enum Zomes {
-    IntegrityLink,
-}
-
-#[hdk_link_zomes]
+// #[hdk_link_zomes]
+#[hdk_to_global_link_types]
+#[hdk_to_local_types(nested = true)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 enum LinkZomes {
     IntegrityLink(LinkTypes),
+    IntegrityLink2(LinkTypes),
+}
+
+impl TryFrom<LinkZomes> for LinkType {
+    type Error = WasmError;
+
+    fn try_from(value: LinkZomes) -> Result<Self, Self::Error> {
+        Ok(Self(GlobalZomeTypeId::try_from(value)?.0))
+    }
+}
+
+impl TryFrom<LinkZomes> for LinkTypeRange {
+    type Error = WasmError;
+
+    fn try_from(value: LinkZomes) -> Result<Self, Self::Error> {
+        let lt: LinkType = value.try_into()?;
+        Ok(lt.into())
+    }
+}
+
+impl TryFrom<LinkZomes> for LinkTypeRanges {
+    type Error = WasmError;
+
+    fn try_from(value: LinkZomes) -> Result<Self, Self::Error> {
+        let lt: LinkType = value.try_into()?;
+        Ok(Self(vec![lt.into()]))
+    }
+}
+
+impl TryFrom<&LinkZomes> for LinkType {
+    type Error = WasmError;
+
+    fn try_from(value: &LinkZomes) -> Result<Self, Self::Error> {
+        Ok(Self(GlobalZomeTypeId::try_from(value)?.0))
+    }
+}
+
+impl TryFrom<&LinkZomes> for LinkTypeRange {
+    type Error = WasmError;
+
+    fn try_from(value: &LinkZomes) -> Result<Self, Self::Error> {
+        let lt: LinkType = value.try_into()?;
+        Ok(lt.into())
+    }
+}
+
+impl TryFrom<&LinkZomes> for LinkTypeRanges {
+    type Error = WasmError;
+
+    fn try_from(value: &LinkZomes) -> Result<Self, Self::Error> {
+        let lt: LinkType = value.try_into()?;
+        Ok(Self(vec![lt.into()]))
+    }
+}
+
+impl LinkTypesHelper<{ LinkZomes::len() }, { LinkZomes::len() as usize }> for LinkZomes {
+    fn iter() -> std::array::IntoIter<Self, { LinkZomes::len() as usize }> {
+        // let arr: [_; LinkTypes::len() as usize] =
+        let mut vec = Vec::with_capacity(LinkZomes::len() as usize);
+        vec.extend(LinkTypes::iter().map(Self::IntegrityLink));
+        vec.extend(LinkTypes::iter().map(Self::IntegrityLink2));
+        let arr: [_; LinkZomes::len() as usize] = vec
+            .try_into()
+            .expect("This can't fail unless the const generics are wrong");
+        arr.into_iter()
+        // [
+        //     Self::IntegrityLink(LinkTypes::SomeLinks),
+        //     Self::IntegrityLink(LinkTypes::SomeOtherLinks),
+        // ]
+        // .into_iter()
+    }
 }
 
 fn path(s: &str) -> ExternResult<AnyLinkableHash> {
-    let path = Path::from(s).locate(Zomes::IntegrityLink);
+    let path = Path::from(s).try_into_typed(LinkTypes::SomeLinks)?;
     path.ensure()?;
     Ok(path.path_entry_hash()?.into())
 }
@@ -22,7 +96,7 @@ fn base() -> ExternResult<AnyLinkableHash> {
 }
 
 fn baseless() -> ExternResult<AnyLinkableHash> {
-    Ok(EntryHash::from_raw_32([1_u8; 32].to_vec()).into())
+    Ok(EntryHash::from_raw_36([1_u8; 32].to_vec()).into())
 }
 
 fn target() -> ExternResult<AnyLinkableHash> {
@@ -30,51 +104,41 @@ fn target() -> ExternResult<AnyLinkableHash> {
 }
 
 fn external() -> ExternResult<AnyLinkableHash> {
-    Ok(ExternalHash::from_raw_32([0_u8; 32].to_vec()).into())
+    Ok(ExternalHash::from_raw_36([0_u8; 32].to_vec()).into())
 }
 
 fn targetless() -> ExternResult<AnyLinkableHash> {
-    Ok(EntryHash::from_raw_32([2_u8; 32].to_vec()).into())
+    Ok(EntryHash::from_raw_36([2_u8; 32].to_vec()).into())
 }
 
 #[hdk_extern]
 fn create_link(_: ()) -> ExternResult<HeaderHash> {
+    hdk::prelude::create_link(base()?, target()?, LinkTypes::SomeLinks, ())
+}
+
+#[hdk_extern]
+fn create_nested_link(_: ()) -> ExternResult<HeaderHash> {
     hdk::prelude::create_link(
         base()?,
         target()?,
-        LinkZomes::IntegrityLink(LinkTypes::Any),
+        LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
         (),
     )
 }
 
 #[hdk_extern]
 fn create_baseless_link(_: ()) -> ExternResult<HeaderHash> {
-    hdk::prelude::create_link(
-        baseless()?,
-        targetless()?,
-        LinkZomes::IntegrityLink(LinkTypes::Any),
-        (),
-    )
+    hdk::prelude::create_link(baseless()?, targetless()?, LinkTypes::SomeLinks, ())
 }
 
 #[hdk_extern]
 fn create_external_base_link(_: ()) -> ExternResult<HeaderHash> {
-    hdk::prelude::create_link(
-        external()?,
-        base()?,
-        LinkZomes::IntegrityLink(LinkTypes::Any),
-        (),
-    )
+    hdk::prelude::create_link(external()?, base()?, LinkTypes::SomeLinks, ())
 }
 
 #[hdk_extern]
 fn create_back_link(_: ()) -> ExternResult<HeaderHash> {
-    hdk::prelude::create_link(
-        target()?,
-        base()?,
-        LinkZomes::IntegrityLink(LinkTypes::Any),
-        (),
-    )
+    hdk::prelude::create_link(target()?, base()?, LinkTypes::SomeLinks, ())
 }
 
 #[hdk_extern]
@@ -84,105 +148,215 @@ fn delete_link(input: HeaderHash) -> ExternResult<HeaderHash> {
 
 #[hdk_extern]
 fn get_links(_: ()) -> ExternResult<Vec<Link>> {
-    hdk::prelude::get_links(base()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
+    // Include just `SomeLinks`
+    hdk::prelude::get_links(base()?, LinkTypes::SomeLinks, None)?;
+    // Include all links from within this zome.
+    hdk::prelude::get_links(base()?, LinkTypes::range(..), None)?;
+    // Include link types from `SomeLinks` up
+    hdk::prelude::get_links(base()?, LinkTypes::range(LinkTypes::SomeLinks..), None)?;
+    // Include link types from `SomeLinks` to `SomeOtherLinks` inclusive.
+    hdk::prelude::get_links(
+        base()?,
+        LinkTypes::range(LinkTypes::SomeLinks..=LinkTypes::SomeOtherLinks),
+        None,
+    )?;
+    // Include no link types (this isn't very useful).
+    hdk::prelude::get_links(
+        base()?,
+        LinkTypes::range(LinkTypes::SomeLinks..LinkTypes::SomeLinks),
+        None,
+    )?;
+    // Include types in this vec.
+    hdk::prelude::get_links(
+        base()?,
+        vec![LinkTypes::SomeLinks, LinkTypes::SomeOtherLinks],
+        None,
+    )?;
+    // Include types in this array.
+    hdk::prelude::get_links(
+        base()?,
+        [LinkTypes::SomeLinks, LinkTypes::SomeOtherLinks],
+        None,
+    )?;
+    // Include types in this ref to array.
+    hdk::prelude::get_links(
+        base()?,
+        &[LinkTypes::SomeLinks, LinkTypes::SomeOtherLinks],
+        None,
+    )?;
+    let t = [LinkTypes::SomeLinks, LinkTypes::SomeOtherLinks];
+    // Include types in this slice.
+    hdk::prelude::get_links(base()?, &t[..], None)?;
+    // Include all link types defined in any zome.
+    hdk::prelude::get_links(base()?, .., None)
 }
 
 #[hdk_extern]
-fn get_baseless_links(_: ()) -> ExternResult<Vec<Link>> {
-    hdk::prelude::get_links(baseless()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
+fn get_links_nested(_: ()) -> ExternResult<Vec<Link>> {
+    // Include just `SomeLinks`
+    hdk::prelude::get_links(
+        base()?,
+        LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+        None,
+    )?;
+    // Include all links from within this zome.
+    hdk::prelude::get_links(base()?, LinkZomes::range(..), None)?;
+    // Include link types from `SomeLinks` up
+    hdk::prelude::get_links(
+        base()?,
+        LinkZomes::range(LinkZomes::IntegrityLink(LinkTypes::SomeLinks)..),
+        None,
+    )?;
+    // Include link types from `SomeLinks` to `SomeOtherLinks` inclusive.
+    hdk::prelude::get_links(
+        base()?,
+        LinkZomes::range(
+            LinkZomes::IntegrityLink(LinkTypes::SomeLinks)
+                ..=LinkZomes::IntegrityLink(LinkTypes::SomeOtherLinks),
+        ),
+        None,
+    )?;
+    // Include no link types (this isn't very useful).
+    hdk::prelude::get_links(
+        base()?,
+        LinkZomes::range(
+            LinkZomes::IntegrityLink(LinkTypes::SomeLinks)
+                ..LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+        ),
+        None,
+    )?;
+    // Include types in this vec.
+    hdk::prelude::get_links(
+        base()?,
+        vec![
+            LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+            LinkZomes::IntegrityLink(LinkTypes::SomeOtherLinks),
+        ],
+        None,
+    )?;
+    // Include types in this array.
+    hdk::prelude::get_links(
+        base()?,
+        [
+            LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+            LinkZomes::IntegrityLink(LinkTypes::SomeOtherLinks),
+        ],
+        None,
+    )?;
+    // Include types in this ref to array.
+    hdk::prelude::get_links(
+        base()?,
+        &[
+            LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+            LinkZomes::IntegrityLink(LinkTypes::SomeOtherLinks),
+        ],
+        None,
+    )?;
+    let t = [
+        LinkZomes::IntegrityLink(LinkTypes::SomeLinks),
+        LinkZomes::IntegrityLink(LinkTypes::SomeOtherLinks),
+    ];
+    // Include types in this slice.
+    hdk::prelude::get_links(base()?, &t[..], None)?;
+    // Include all link types defined in any zome.
+    hdk::prelude::get_links(base()?, .., None)
 }
+// #[hdk_extern]
+// fn get_baseless_links(_: ()) -> ExternResult<Vec<Link>> {
+//     hdk::prelude::get_links(baseless()?, LinkTypes::SomeLinks, None)
+// }
 
-#[hdk_extern]
-fn get_external_links(_: ()) -> ExternResult<Vec<Link>> {
-    hdk::prelude::get_links(external()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
-}
+// #[hdk_extern]
+// fn get_external_links(_: ()) -> ExternResult<Vec<Link>> {
+//     hdk::prelude::get_links(external()?, LinkTypes::SomeLinks, None)
+// }
 
-#[hdk_extern]
-fn get_link_details(_: ()) -> ExternResult<LinkDetails> {
-    hdk::prelude::get_link_details(base()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
-}
+// #[hdk_extern]
+// fn get_link_details(_: ()) -> ExternResult<LinkDetails> {
+//     hdk::prelude::get_link_details(base()?, LinkTypes::SomeLinks, None)
+// }
 
-#[hdk_extern]
-fn get_back_links(_: ()) -> ExternResult<Vec<Link>> {
-    hdk::prelude::get_links(target()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
-}
+// #[hdk_extern]
+// fn get_back_links(_: ()) -> ExternResult<Vec<Link>> {
+//     hdk::prelude::get_links(target()?, LinkTypes::SomeLinks, None)
+// }
 
-#[hdk_extern]
-fn get_back_link_details(_: ()) -> ExternResult<LinkDetails> {
-    hdk::prelude::get_link_details(target()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)
-}
+// #[hdk_extern]
+// fn get_back_link_details(_: ()) -> ExternResult<LinkDetails> {
+//     hdk::prelude::get_link_details(target()?, LinkTypes::SomeLinks, None)
+// }
 
-#[hdk_extern]
-fn get_links_bidi(_: ()) -> ExternResult<Vec<Vec<Link>>> {
-    HDK.with(|h| {
-        h.borrow().get_links(vec![
-            GetLinksInput::new(
-                base()?,
-                LinkZomes::IntegrityLink(LinkTypes::Any).into(),
-                None,
-            ),
-            GetLinksInput::new(
-                target()?,
-                LinkZomes::IntegrityLink(LinkTypes::Any).into(),
-                None,
-            ),
-        ])
-    })
-}
+// #[hdk_extern]
+// fn get_links_bidi(_: ()) -> ExternResult<Vec<Vec<Link>>> {
+//     HDK.with(|h| {
+//         h.borrow().get_links(vec![
+//             GetLinksInput::new(
+//                 base()?,
+//                 LinkTypes::SomeLinks.into(),
+//                 None,
+//             ),
+//             GetLinksInput::new(
+//                 target()?,
+//                 LinkTypes::SomeLinks.into(),
+//                 None,
+//             ),
+//         ])
+//     })
+// }
 
-#[hdk_extern]
-fn get_link_details_bidi(_: ()) -> ExternResult<Vec<LinkDetails>> {
-    HDK.with(|h| {
-        h.borrow().get_link_details(vec![
-            GetLinksInput::new(
-                base()?,
-                LinkZomes::IntegrityLink(LinkTypes::Any).into(),
-                None,
-            ),
-            GetLinksInput::new(
-                target()?,
-                LinkZomes::IntegrityLink(LinkTypes::Any).into(),
-                None,
-            ),
-        ])
-    })
-}
+// #[hdk_extern]
+// fn get_link_details_bidi(_: ()) -> ExternResult<Vec<LinkDetails>> {
+//     HDK.with(|h| {
+//         h.borrow().get_link_details(vec![
+//             GetLinksInput::new(
+//                 base()?,
+//                 LinkTypes::SomeLinks.into(),
+//                 None,
+//             ),
+//             GetLinksInput::new(
+//                 target()?,
+//                 LinkTypes::SomeLinks.into(),
+//                 None,
+//             ),
+//         ])
+//     })
+// }
 
-#[hdk_extern]
-fn delete_all_links(_: ()) -> ExternResult<()> {
-    for link in hdk::prelude::get_links(base()?, LinkZomes::IntegrityLink(LinkTypes::Any), None)? {
-        hdk::prelude::delete_link(link.create_link_hash)?;
-    }
-    Ok(())
-}
+// #[hdk_extern]
+// fn delete_all_links(_: ()) -> ExternResult<()> {
+//     for link in hdk::prelude::get_links(base()?, LinkTypes::SomeLinks, None)? {
+//         hdk::prelude::delete_link(link.create_link_hash)?;
+//     }
+//     Ok(())
+// }
 
-/// Same as path.ensure() but doesn't check for
-/// exists. This can happen when ensuring paths
-/// in partitions so this test just shows that it's safe to do so.
-#[hdk_extern]
-fn commit_existing_path(_: ()) -> ExternResult<()> {
-    let path = Path::from("a.c").locate(Zomes::IntegrityLink);
-    if let Some(parent) = path.parent() {
-        parent.ensure()?;
-        hdk::prelude::create_link(
-            parent.path_entry_hash()?.into(),
-            path.path_entry_hash()?.into(),
-            LinkZomes::IntegrityLink(LinkTypes::Any),
-            LinkTag::new(
-                match path.leaf() {
-                    None => <Vec<u8>>::new(),
-                    Some(component) => {
-                        UnsafeBytes::from(SerializedBytes::try_from(component)?).into()
-                    }
-                }
-                .to_vec(),
-            ),
-        )?;
-    }
-    Ok(())
-}
+// /// Same as path.ensure() but doesn't check for
+// /// exists. This can happen when ensuring paths
+// /// in partitions so this test just shows that it's safe to do so.
+// #[hdk_extern]
+// fn commit_existing_path(_: ()) -> ExternResult<()> {
+//     let path = Path::from("a.c").locate(Zomes::IntegrityLink);
+//     if let Some(parent) = path.parent() {
+//         parent.ensure()?;
+//         hdk::prelude::create_link(
+//             parent.path_entry_hash()?.into(),
+//             path.path_entry_hash()?.into(),
+//             LinkTypes::SomeLinks,
+//             LinkTag::new(
+//                 match path.leaf() {
+//                     None => <Vec<u8>>::new(),
+//                     Some(component) => {
+//                         UnsafeBytes::from(SerializedBytes::try_from(component)?).into()
+//                     }
+//                 }
+//                 .to_vec(),
+//             ),
+//         )?;
+//     }
+//     Ok(())
+// }
 
-#[hdk_extern]
-fn get_long_path(_: ()) -> ExternResult<Vec<Link>> {
-    Path::from("a").locate(Zomes::IntegrityLink).children()
-}
+// #[hdk_extern]
+// fn get_long_path(_: ()) -> ExternResult<Vec<Link>> {
+//     Path::from("a").locate(Zomes::IntegrityLink).children()
+// }
